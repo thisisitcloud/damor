@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+
+<head>
+    <title>MUI</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            text-align: center;
+            font-family: Arial, Helvetica, sans-serif;
+            min-width:300px;
+        }
+
+        table {
+            font-size: 12px;
+            border: 2px solid #664400;
+            border-collapse: collapse;
+            width: 100%;
+            height: 100%;
+        }
+
+        th,
+        td {
+            padding: 4px;
+            height: 32px;
+        }
+
+        th {
+            width: 100px;
+            background: #fff999;
+            border: 2px solid #664400;
+        }
+
+        th.main {
+            background: #ffdd00;
+        }
+
+
+        input {
+            width: 100%;
+        }
+
+        input[type="number"],
+        input[type="text"],
+        input[type="url"],
+        input[type="password"] {
+            border: 1px solid #aaaaaa;
+        }
+
+        .col {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .row {
+            display: flex;
+            flex-direction: row;
+        }
+
+        .cel {
+            width: 100%;
+            min-width: 0px;
+            padding: 10px;
+            flex: 1;
+        }
+
+        #x-s {
+            -webkit-appearance: none;
+            width: 90%;
+            height: 15px;
+            background: #cccccc;
+            border: 1px solid #664400;
+        }
+
+        #x-s::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #ffdd00;
+            border: 1px solid #664400;
+        }
+
+        #log {
+            width: 100%;
+            height: 100%;
+            min-height: 200px;
+            background: #eeeeee;
+            text-align: left;
+            list-style-type: none;
+            overflow: scroll;
+        }
+
+        @media only screen and (max-width: 1024px) {
+            .row {
+                flex-direction: column;
+            }
+        }
+
+    </style>
+</head>
+
+<body>
+    <div class="col">
+    <div class="cel">
+        <h1>Movix Felhasználói Felület</h1>
+    </div>
+    <div class="cel row">
+        <div class="cel">
+            <table>
+                <tr>
+                    <th class="main" colspan="2">Vezérlés</th>
+                </tr>
+                <tr>
+                    <th>Állapot:</th>
+                    <td><input type="text" value="" id="n-p" /></td>
+                </tr>
+                <tr>
+                    <th><input type="button" value="Csatlakozás" id="r-s" /></th>
+                    <td></td>
+                </tr>
+                <tr>
+                    <th><input type="button" value="Újraindítás" id="r-s" /></th>
+                    <td></td>
+                </tr>
+                <tr>
+                    <th class="main" colspan="2">Hálózat</th>
+                </tr>
+                <tr>
+                    <th>Név:</th>
+                    <td><input type="text" value="" id="n-n" /></td>
+                </tr>
+                <tr>
+                    <th>Jelszó:</th>
+                    <td><input type="text" value="" id="n-p" /></td>
+                </tr>
+                <tr>
+                    <th><input type="button" value="Beállítás" id="n-s" /></th>
+                    <td>
+                        <select id="n-if">
+                            <option value="1">AP</option>
+                            <option value="2">STA</option>
+                        </select>
+                    </td>
+                </tr>
+                <tr>
+                    <th class="main" colspan="2">Rögzítés</th>
+                </tr>
+                <tr>
+                    <th>Mérés:</th>
+                    <td><input type="url" value="" id="r-m" /></td>
+                </tr>
+                <tr>
+                    <th>Riasztás:</th>
+                    <td><input type="url" value="" id="r-a" /></td>
+                </tr>
+                <tr>
+                    <th><input type="button" value="Indítás" id="r-s" /></th>
+                    <td></td>
+                </tr>
+            </table>
+        </div>
+        <div class="cel">
+            <table>
+                <tr>
+                    <th class="main" colspan="4">Pálya</th>
+                </tr>
+                <tr>
+                    <th>Hossz</th>
+                    <td colspan="3"><input type="number" id="len" value="0.0" readonly /></td>
+                </tr>
+                <tr>
+                    <th>Ingadozás</th>
+                    <td colspan="3"><input type="number" id="err" value="0.0" readonly /></td>
+                </tr>
+                <tr>
+                    <th></th>
+                    <td colspan="3"><span id="x-ss"><input type="range" id="x-s" value="1.0" disabled /></span></td>
+                </tr>
+                <tr>
+                    <th class="main" colspan="4">Adatok</th>
+                </tr>
+                <tr>
+                    <th>Tengely</th>
+                    <td>X</td>
+                    <td>Y</td>
+                    <td>Z</td>
+                </tr>
+                <tr>
+                    <th>Pozició</th>
+                    <td><input type="number" id="x-p" value="0.0" readonly /></td>
+                    <td><input type="number" id="y-p" value="0.0" readonly /></td>
+                    <td><input type="number" id="z-p" value="0.0" readonly /></td>
+                </tr>
+                <tr>
+                    <th>Sebesség</th>
+                    <td><input type="number" id="x-v" value="0.0" readonly /></td>
+                    <td><input type="number" id="y-v" value="0.0" readonly /></td>
+                    <td><input type="number" id="z-v" value="0.0" readonly /></td>
+                </tr>
+                <tr>
+                    <th>Gyorsulás</th>
+                    <td><input type="number" id="x-a" value="0.0" readonly /></td>
+                    <td><input type="number" id="y-a" value="0.0" readonly /></td>
+                    <td><input type="number" id="z-a" value="0.0" readonly /></td>
+                </tr>
+                <tr>
+                    <th>Határérték</th>
+                    <td><input type="number" id="x-t" value="0.0" /></td>
+                    <td><input type="number" id="y-t" value="0.0" /></td>
+                    <td><input type="number" id="z-t" value="0.0" /></td>
+                </tr>
+                <tr>
+                    <th>Riasztás</th>
+                    <td><input type="checkbox" id="x-w" value="0.0" /></td>
+                    <td><input type="checkbox" id="y-w" value="0.0" /></td>
+                    <td><input type="checkbox" id="z-w" value="0.0" /></td>
+                </tr>
+                <tr>
+                    <th>Szűrés</th>
+                    <td><input type="checkbox" id="x-f" value="0.0" /></td>
+                    <td><input type="checkbox" id="y-f" value="0.0" /></td>
+                    <td><input type="checkbox" id="z-f" value="0.0" /></td>
+                </tr>
+            </table>
+        </div>
+        <div class="cel">
+            <table>
+                <tr>
+                    <th class="main" colspan="2">Napló</th>
+                </tr>
+                <tr>
+                    <th><input type="button" value="Mentés" id="l-s" /></th>
+                    <td rowspan="2">
+                        <ul id=log></ul>
+                    </td>
+                </tr>
+                <tr style="height: 100%">
+                    <th></th>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <div class="cel">
+        <h1>Grafikonok</h1>
+    </div>
+
+    <div class="cel row">
+        <div class="cel col">
+            <div class="cel">
+                <canvas id="cv-xp"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-xv"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-xa"></canvas>
+            </div>
+        </div>
+        <div class="cel col">
+            <div class="cel">
+                <canvas id="cv-yp"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-yv"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-ya"></canvas>
+            </div>
+        </div>
+        <div class="cel col">
+            <div class="cel">
+                <canvas id="cv-zp"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-zv"></canvas>
+            </div>
+            <div class="cel">
+                <canvas id="cv-za"></canvas>
+            </div>
+        </div>
+    </div>
+
+
+
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js"></script>
+    <script>
+        var xss = document.getElementById("x-ss")
+        var xs = document.getElementById("x-s")
+        var xp = document.getElementById("x-p")
+        xp.onchange = function () { xsli.value = this.value }
+        xss.onmouseenter = function () { xp.style.backgroundColor = "#cfc" }
+        xss.onmouseleave = function () { xp.style.backgroundColor = "#fff" }
+
+        var charts = {
+            X: [
+                initChart('xp', [0, 255, 0], 'Pozíció az X tengelyen'),
+                initChart('xv', [0, 127, 127], 'Sebesség az X tengelyen'),
+                initChart('xa', [0, 0, 255], 'Gyorsulás az X tengelyen')
+            ],
+            Y: [
+                initChart('yp', [0, 255, 0], 'Pozíció az Y tengelyen'),
+                initChart('yv', [0, 127, 127], 'Sebesség az Y tengelyen'),
+                initChart('ya', [0, 0, 255], 'Gyorsulás az Y tengelyen')
+            ],
+            Z: [
+                initChart('zp', [0, 255, 0], 'Pozíció az Z tengelyen'),
+                initChart('zv', [0, 127, 127], 'Sebesség az Z tengelyen'),
+                initChart('za', [0, 0, 255], 'Gyorsulás az Z tengelyen')
+            ]
+        };
+
+        function log(text) {
+            var messages = document.getElementsByClassName('log')[0],
+                message = document.createElement('li'),
+                content = document.createTextNode(text);
+            message.appendChild(content);
+            messages.appendChild(message);
+        }
+
+        function updateChart(chart, time, val, err) {
+            chart.data.datasets[0].data.push({ x: time, y: val });
+            chart.data.datasets[1].data.push({ x: time, y: val - err });
+            chart.data.datasets[2].data.push({ x: time, y: val + err });
+            if (chart.data.datasets[0].data.length > 200) {
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift();
+                chart.data.datasets[2].data.shift();
+            }
+            chart.update();
+        }
+
+        function addRecord(data) {
+            var records = { X: [], Y: [], Z: [] };
+            for (var i = 0; i < data.length; i++) {
+                var record = data[i].split(',');
+                if (record[0] in records && record.length == 8) {
+                    records[record.shift()] = record;
+                }
+            }
+            console.log(records);
+
+            if (records.X.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.X[i], Number(records.X[0]), Number(records.X[i + 1]), Math.sqrt(records.X[i + 4]));
+                }
+            }
+            if (records.Y.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.Y[i], Number(records.Y[0]), Number(records.Y[i + 1]), Math.sqrt(records.Y[i + 4]));
+                }
+            }
+            if (records.Z.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.Z[i], Number(records.Z[0]), Number(records.Z[i + 1]), Math.sqrt(records.Z[i + 4]));
+                }
+            }
+
+        }
+
+        function initChart(id, c, t) {
+            return new Chart(document.getElementById('cv-' + id).getContext('2d'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 1.0)', data: [], fill: false },
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 0.1)', data: [], fill: 0 },
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 0.1)', data: [], fill: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    title: { display: true, text: t },
+                    legend: { display: false },
+                    elements: { point: { radius: 0 } },
+                    animation: { duration: 0 },
+                    scales: {
+                        yAxes: [{ type: 'linear', stepSize: 0.1 }],
+                        xAxes: [{ type: 'linear' }]
+                    }
+                }
+            });
+        }
+
+        const socket = new WebSocket("ws://localhost:5678");
+        socket.onopen = function (e) {
+            socket.send("connect");
+            log(`[open] Connection established`);
+        };
+        socket.onmessage = function (e) {
+            var lines = event.data.split('\n');
+            if (lines[0] == 'record' && lines.length > 1) {
+                lines.shift()
+                addRecord(lines);
+            }
+            log(`[message] ${event.data}`);
+        };
+        socket.onclose = function (e) {
+            if (event.wasClean) {
+                log(`[close] Connection closed, code: ${e.code}, reason: ${e.reason}`);
+            }
+            else {
+                log(`[close] Connection died`);
+            }
+        };
+        socket.onerror = function (e) {
+            log(`[error] ${e.message}`);
+        };
+    </script>
+</body>

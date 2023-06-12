@@ -1,0 +1,13 @@
+#include "filter.h"
+void PredictState(dtFilter *flt)
+   flt->t += flt->dt;
+    flt->x = flt->F * flt->x;
+    flt->P = flt->F * flt->P * flt->F.t() + flt->Q;}
+void EstimateState(dtFilter *flt, dtObservation *obs)
+    dspm::Mat y = obs->z - obs->H * flt->x;
+    dspm::Mat S = obs->H * flt->P * obs->H.t() + obs->R;
+    dspm::Mat K = flt->P * obs->H.t() * S.inverse();
+    dspm::Mat T = dspm::Mat::eye(flt->x.length) - K * obs->H;
+    flt->x = flt->x + K * y;
+    flt->P = T * flt->P * T.t() + K * obs->R * K.t();
+

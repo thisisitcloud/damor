@@ -1,0 +1,249 @@
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#include "esp_log.h"
+#include "esp_http_server.h"
+#include "stdio.h"
+#include "cjson.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "wifi.h"
+#include "meas.h"
+#include "server.h"
+static const char *TAG = "server";
+
+#define SERVER_REC_WS 1u
+#define SERVER_HTML "<!DOCTYPE html>\n"                                                 
+                    "<head>\n"                                                                                                               \
+                    "   <title>MUI</title>\n"                                                                                                \
+                    "   <script type=\"module\">\n"                                                                                          \
+                    "       import {InfluxDB, Point} from 'https://unpkg.com/@influxdata/influxdb-client/dist/index.browser.mjs';\n"         \
+                    "       const url = 'http://localhost:8086';\n"                                                                          \
+                    "       const token = '1cPmbJFojb_1m6GlzFu1iFaRtUZ9WW_r_r8VOGWXzPUgXaQouJKK-vl80qL82frnX_E7J68BbeEf74cYLtN6xA==';\n"     \
+                    "       const org = 'AIRobotix';\n"                                                                                      \
+                    "       const bucket = 'Movix';\n"                                                                                       \
+                    "       const writeApi = new InfluxDB({url, token}).getWriteApi(org, bucket, 'ms');\n"                                   \
+                    "       const socket = new WebSocket(\"ws://%s/ws\");\n"                                                                 
+                    "       socket.onopen = function(e) {\n"                                                                                 \
+                    "           socket.send(\"connect\");\n"                                                                                 \
+                    "           msg(`[open] Connection established`);\n"                                                                     
+                    "       };\n"                                                                                                           
+                    "       socket.onmessage = function(event) {\n"                                                                          
+                    "           var lines = event.data.split('\\n');\n"                                                                      \
+                    "           if (lines[0] == \"record\") {\n"                                                                             \
+                    "               var d = new Date();\n"                                                                                   \
+                    "               var t = d.getTime();\n"                                                                                  \
+                    "               lines.slice(1).forEach(l => l + ' ' + t);\n"                                                             \
+                    "               writeApi.writeRecords(lines.slice(1));\n"                                                                
+                    "               writeApi.flush().\n"                                                                                     \
+                    "                    then(() => {console.log('FINISHED');}).catch(e => {console.error(e); console.log('\\nERROR');});\n" \
+                    "           }\n"                                                                                                         \
+                    "           else {\n"                                                                                                    \
+                    "               msg(`[message] ${event.data}`);\n"                                                                       
+                    "           }\n"                                                                                                         \
+                    "       };\n"                                                                                                            \
+                    "       socket.onclose = function(event) {\n"                                                                            
+                    "           if (event.wasClean) {\n"                                                                                     \
+                    "               msg(`[close] Connection closed, code: ${event.code}, reason: ${event.reason}`);\n"                       \
+                    "           }\n"                                                                                                         \
+                    "           else {\n"                                                                                                    \
+                    "               msg(`[close] Connection died`);\n"                                                 
+                    "           }\n"                                                                                                         \
+                    "           writeApi.close();\n"                                                                                         \
+                    "       };\n"                                                                                                            \
+                    "       socket.onerror = function(error) {\n"                                                                            \
+                    "           msg(`[error] ${error.message}`);\n"                                                                          \
+                    "       };\n"                                                                                                            \
+                    "       window.socket = socket;\n"                                                                                       \
+                    "       function msg(text) {\n"                                                                                          \
+                    "           var messages = document.getElementsByTagName('ul')[0],\n"                                                    
+                    "               message = document.createElement('li'),\n"                                                               
+                    "               content = document.createTextNode(text);\n"                                                              
+                    "           message.appendChild(content);\n"                                                                             
+                    "           messages.appendChild(message);\n"                                                                            
+                    "       }\n"                                                                                                             \
+                    "   </script>\n"                                                                                                         \
+                    "</head>\n"                                                                                                              \
+                    "<body>\n"                                                                                                               \
+                    "   <h1>Movix User Interface</h1>\n"                                                                                    
+                    "   <button type=\"button\" onclick=\"socket.send('start-ax')\">Start Ax</button>\n"                                     \
+                    "   <button type=\"button\" onclick=\"socket.send('stop-ax')\">Stop Ax</button>\n"                                       \
+                    "   <button type=\"button\" onclick=\"socket.send('start-rf')\">Start Rf</button>\n"                                     \
+                    "   <button type=\"button\" onclick=\"socket.send('stop-rf')\">Stop Rf</button>\n"                                       \
+                    "   <button type=\"button\" onclick=\"socket.send('start-rec')\">Start Rec</button>\n"                                   \
+                    "   <button type=\"button\" onclick=\"socket.send('stop-rec')\">Stop Rec</button><br>\n"                                 \
+                    "   <div style=\"height: 400px; width: 800px; overflow: auto; background: #f8f8f8;\">\n"                                 \
+                    "       <ul style=\"list-style-type:none;\"></ul>\n"                                                                    
+                    "   </div>\n"                                                                                                            \
+                    "</body>"
+typedef struct server
+    TaskHandle_t wsTask;
+    httpd_handle_t handle;
+    int websocket;
+    int connected;
+    char *html;
+} dtServer;
+static dtServer *server = NULL;
+static const char dirs[] = {'X', 'Y', 'Z'};
+static void WsSendAsync(void *arg)
+    httpd_ws_frame_t *frame = (httpd_ws_frame_t *)arg;
+    esp_err_t ret = httpd_ws_send_frame_async(server->handle, server->websocket, frame);
+    if (ret != ESP_OK)
+        ESP_LOGW(TAG, "sending websocket frame failed, %s", esp_err_to_name(ret));
+    free(frame->payload);
+    free(frame);
+static void WsTask(void *arg)
+    float state[9u] = {0};
+    int64_t last = 0;
+    int64_t time = 0;
+    int length;
+    char record[512];
+    ESP_LOGI(TAG, "websocket record start");
+    while (pdFALSE == xTaskNotifyWait(0u, 0u, NULL, 0u))
+        FilterCurrentState(state, &time);
+        if (time > last)
+            memset(record, 0, sizeof(record));
+            length = sprintf(record, "record\n");
+            for (int dir = 0; dir < 3; dir++)
+                length += sprintf(&record[length], "state,axis=\"%c\" pos=%0.3f,vel=%0.3f,acc=%0.3f\n", dirs[dir], state[dir], state[dir + 3], state[dir + 6]);
+            last = time;
+            ESP_LOGD(TAG, "new record, length: %d\n%s", length, record);
+            httpd_ws_frame_t *frame = calloc(1, sizeof(httpd_ws_frame_t));
+            frame->type = HTTPD_WS_TYPE_TEXT;
+            frame->len = length;
+            frame->payload = calloc(length, sizeof(uint8_t));
+            memcpy(frame->payload, record, length);
+            esp_err_t ret = httpd_queue_work(server->handle, WsSendAsync, (void *)frame);
+            if (ret != ESP_OK)
+                ESP_LOGW(TAG, "queing websocket frame failed, %s", esp_err_to_name(ret));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    ESP_LOGI(TAG, "websocket record stop");
+    vTaskDelete(NULL);
+static esp_err_t RecordStart(uint32_t type)
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    switch (type)
+    case SERVER_REC_WS:
+        if (server->wsTask == NULL)
+            err = (pdPASS == xTaskCreate(WsTask, "server-ws-task", 8192, NULL, 2, &server->wsTask) ? ESP_OK : ESP_ERR_NO_MEM);
+        break
+    default:
+        ESP_LOGW(TAG, "start failed, invalid arg");
+        err = ESP_ERR_INVALID_ARG;
+        break;
+    return err;
+static esp_err_t RecordStop(uint32_t type)
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    switch (type)
+    case SERVER_REC_WS:
+        if (server->wsTask != NULL)
+            xTaskNotify(server->wsTask, 0u, eNoAction);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            server->wsTask = NULL;
+            err = ESP_OK;
+        break;
+    default:
+        ESP_LOGW(TAG, "stop failed, invalid arg");
+        err = ESP_ERR_INVALID_ARG;
+        break;
+    return err;
+static esp_err_t ServerWebsocketHandler(httpd_req_t *req)
+
+    httpd_ws_frame_t frame;
+    memset(&frame, 0, sizeof(httpd_ws_frame_t));
+    frame.payload = (uint8_t *)calloc(64, sizeof(uint8_t));
+    esp_err_t ret = httpd_ws_recv_frame(req, &frame, 64);
+    if (ESP_OK != ret)
+        ESP_LOGE(TAG, "websocket receive failed.");
+        return ret;
+    ESP_LOGD(TAG, "websocket frame received");
+    ESP_LOGD(TAG, "\tType: %d", frame.type);
+    ESP_LOGD(TAG, "\tLength: %d", frame.len);
+    ESP_LOGD(TAG, "\tMessage: %s", frame.payload);
+    if (frame.type == HTTPD_WS_TYPE_TEXT)
+        char *response;
+        if (0 == server->connected)
+            if (0 == strcmp((char *)frame.payload, "connect"))
+                response = "accepted";
+                server->websocket = httpd_req_to_sockfd(req);
+                server->connected = 1;
+            else
+                response = "invalid";
+                ret = ESP_FAIL;
+        else
+            if (0 == strcmp((char *)frame.payload, "start-rf"))
+                response = (ESP_OK == MeasStart(MEAS_SOURCE_RF) ? "start-rf-ok" : "start-rf-fail");
+            else if (0 == strcmp((char *)frame.payload, "stop-rf"))
+                response = (ESP_OK == MeasStop(MEAS_SOURCE_RF) ? "stop-rf-ok" : "stop-rf-fail");
+            else if (0 == strcmp((char *)frame.payload, "start-ax"))
+                response = (ESP_OK == MeasStart(MEAS_SOURCE_AX) ? "start-ax-ok" : "start-ax-fail");
+            else if (0 == strcmp((char *)frame.payload, "stop-ax"))
+                response = (ESP_OK == MeasStop(MEAS_SOURCE_AX) ? "stop-ax-ok" : "stop-ax-fail");
+            else if (0 == strcmp((char *)frame.payload, "start-rec"))
+                response = (ESP_OK == RecordStart(SERVER_REC_WS) ? "start-rec-ok" : "start-rec-fail");
+            else if (0 == strcmp((char *)(frame.payload), "stop-rec"))
+                response = (ESP_OK == RecordStop(SERVER_REC_WS) ? "stop-rec-ok" : "stop-rec-fail");
+            else
+                response = "invalid";
+                ret = ESP_FAIL;
+                server->websocket = -1;
+                server->connected = -1;
+        frame.type = HTTPD_WS_TYPE_TEXT;
+        frame.len = strlen(response);
+        memset(frame.payload, 0, sizeof(64));
+        memcpy(frame.payload, response, frame.len)
+        httpd_ws_send_frame(req, &frame);
+    free(frame.payload)
+    return ESP_OK;
+static esp_err_t ServerRequestHandler(httpd_req_t *req)
+    return httpd_resp_send(req, server->html, strlen(server->html));
+esp_err_t ServerStart()
+    static const httpd_uri_t ws = {
+        .uri = "/ws",
+        .method = HTTP_GET,
+        .handler = ServerWebsocketHandler,
+        .user_ctx = NULL,
+        .is_websocket = true,
+    };
+
+    static const httpd_uri_t get = {
+        .uri = "/",
+        .method = HTTP_GET,
+        .handler = ServerRequestHandler,
+        .user_ctx = NULL,
+    esp_err_t err = ESP_OK;
+    if (NULL != server)
+        ESP_LOGW(TAG, "already started");
+        err = ESP_ERR_INVALID_STATE;
+    else
+        server = (dtServer *)calloc(1u, sizeof(dtServer));
+        if (NULL == server)
+            ESP_LOGE(TAG, "not enough memory");
+            err = ESP_ERR_NO_MEM;
+        else
+            httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+            err = httpd_start(&server->handle, &config);
+            if (ESP_OK == err)
+            {
+                ESP_LOGI(TAG, "started");
+                httpd_register_uri_handler(server->handle, &ws);
+                httpd_register_uri_handler(server->handle, &get);
+
+                server->wsTask = NULL;
+                server->websocket = -1;
+                server->connected = 0;
+
+                server->html = (char *)calloc(strlen(SERVER_HTML) + 16, sizeof(char));
+                int len = sprintf(server->html, SERVER_HTML, GetIPAddress());
+                server->html[len] = '\0';
+
+                ESP_LOGD(TAG, "SERVER HTML (%d/%d)\n%s", strlen(SERVER_HTML), strlen(server->html), server->html);
+            else
+                ESP_LOGE(TAG, "start httpd failed");
+                free(server);
+    return err
+void ServerStop()
+    if (NULL != server)
+        httpd_stop(server->handle);
+        free(server->html);
+        server = NULL;
+        ESP_LOGI(TAG, "stopped");

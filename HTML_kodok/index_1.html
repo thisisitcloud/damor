@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+
+<head>
+    <title>MUI</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        .log {
+            background: #f8f8f8;
+            list-style-type: none;
+        }
+
+        .row {
+            padding: 5px;
+        }
+
+        .row::after {
+            content: "";
+            display: block;
+            clear: both;
+        }
+
+        .col-1 {
+            width: 100%;
+        }
+
+        .col-1-2 {
+            width: 50%;
+        }
+
+        .col-1-3 {
+            width: 33.33%;
+        }
+
+        .col-2-3 {
+            width: 66.67%;
+        }
+
+        .col-1-4 {
+            width: 25%;
+        }
+
+        .col-3-4 {
+            width: 75%;
+        }
+
+        .col-1-5 {
+            width: 20%;
+        }
+
+        .col-2-5 {
+            width: 40%;
+        }
+
+        .col-3-5 {
+            width: 60%;
+        }
+
+        .col-4-5 {
+            width: 80%;
+        }
+
+        .col-1-6 {
+            width: 16.67%;
+        }
+
+        .col-5-6 {
+            width: 83.33%;
+        }
+
+        .col-1-7 {
+            width: 14.28%;
+        }
+
+        .col-1-8 {
+            width: 12.5%;
+        }
+
+        .col-7-8 {
+            width: 87.5%;
+        }
+
+        [class*="col-"] {
+            float: left;
+            padding: 5px;
+            text-align: center;
+        }
+
+        input {
+            width: 100%;
+        }
+
+        input[type="number"] {
+            border: 1px solid;
+        }
+
+        #x-sli {
+            -webkit-appearance: none;
+            width: 80%;
+            height: 18px;
+            background: #d3d3d3;
+        }
+
+        #x-sli::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #4CAF50;
+        }
+
+        @media only screen and (max-width: 768px) {
+            [class*="col-"] {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="row">
+        <div class="col-1"><h1>Movix User Interface</h1></div>
+    </div>
+    <div class="row">
+        <div class="col-1-4">
+            <div class="row">
+                <div class="col-1-4"><input type="button" value="Connect" id="conn-b" /></div>
+                <div class="col-1-4"><input type="button" value="Start" id="meas-b" /></div>
+                <div class="col-1-2"><input type="text" value="disconnected" id="meas-s" readonly /></div>
+            </div>
+            <div class="row">
+                <div class="col-1-4"><label>Recorder:</label></div>
+                <div class="col-1-2"><input type="url" value="http://" id="rec-s" /></div>
+            </div>
+            <div class="row">
+                <div class="col-1-4"><label>Alert:</label></div>
+                <div class="col-1-4"><input type="checkbox" value="http://" id="rec-ale" /></div>
+                <div class="col-1-4"><input type="button" value="Add" id="rec-add" /></div>
+            </div>
+            <div class="row">
+                <div class="col-1-4"><label>Normal:</label></div>
+                <div class="col-1-4"><input type="checkbox" value="http://" id="rec-nor" /></div>
+                <div class="col-1-4"><input type="button" value="Remove" id="rec-del" /></div>
+            </div>
+        </div>
+        <div class="col-1-2">
+            <div class="row">
+                <div class="col-1">
+                    <span id="x-sli-s"><input type="range" id="x-sli" value="0.0" disabled /></span>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-1-7">
+                    <div class="row"><label>Axis</label></div>
+                    <div class="row"><label>X:</label></div>
+                    <div class="row"><label>Y:</label></div>
+                    <div class="row"><label>Z:</label></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Position</label></div>
+                    <div class="row"><input type="number" id="x-pos" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="y-pos" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="z-pos" value="0.0" readonly /></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Velocity</label></div>
+                    <div class="row"><input type="number" id="x-vel" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="y-vel" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="z-vel" value="0.0" readonly /></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Acceleration</label></div>
+                    <div class="row"><input type="number" id="x-acc" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="y-acc" value="0.0" readonly /></div>
+                    <div class="row"><input type="number" id="z-acc" value="0.0" readonly /></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Threshold</label></div>
+                    <div class="row"><input type="number" id="x-thr" value="0.0" /></div>
+                    <div class="row"><input type="number" id="y-thr" value="0.0" /></div>
+                    <div class="row"><input type="number" id="z-thr" value="0.0" /></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Alert</label></div>
+                    <div class="row"><input type="checkbox" id="x-ale" /></div>
+                    <div class="row"><input type="checkbox" id="y-ale" /></div>
+                    <div class="row"><input type="checkbox" id="z-ale" /></div>
+                </div>
+                <div class="col-1-7">
+                    <div class="row"><label>Fusion</label></div>
+                    <div class="row"><input type="checkbox" id="x-fus" /></div>
+                    <div class="row"><input type="checkbox" id="y-fus" /></div>
+                    <div class="row"><input type="checkbox" id="z-fus" /></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-1-4">
+            <ul class="log"></ul>
+        </div>
+    </div>
+
+    <div class="col-1-3">
+        <div class="row"><canvas id="cv-xp"></canvas></div>
+        <div class="row"><canvas id="cv-yp"></canvas></div>
+        <div class="row"><canvas id="cv-zp"></canvas></div>
+    </div>
+    <div class="col-1-3">
+        <div class="row"><canvas id="cv-xv"></canvas></div>
+        <div class="row"><canvas id="cv-yv"></canvas></div>
+        <div class="row"><canvas id="cv-zv"></canvas></div>
+    </div>
+    <div class="col-1-3">
+        <div class="row"><canvas id="cv-xa"></canvas></div>
+        <div class="row"><canvas id="cv-ya"></canvas></div>
+        <div class="row"><canvas id="cv-za"></canvas></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.9.4/Chart.min.js"></script>
+    <script>
+        var xslis = document.getElementById("x-sli-s")
+        var xsli = document.getElementById("x-sli")
+        var xpos = document.getElementById("x-pos")
+        xpos.onchange = function () { xsli.value = this.value }
+        xslis.onmouseenter = function () { xpos.style.backgroundColor = "#cfc" }
+        xslis.onmouseleave = function () { xpos.style.backgroundColor = "#fff" }
+
+        var charts = {
+            X: [
+                initChart('xp', [0, 255, 0], 'Position on X-axis'),
+                initChart('xv', [0, 127, 127], 'Velocity on X-axis'),
+                initChart('xa', [0, 0, 255], 'Acceleration on X-axis')
+            ],
+            Y: [
+                initChart('yp', [0, 255, 0], 'Position on Y-axis'),
+                initChart('yv', [0, 127, 127], 'Velocity on Y-axis'),
+                initChart('ya', [0, 0, 255], 'Acceleration on Y-axis')
+            ],
+            Z: [
+                initChart('zp', [0, 255, 0], 'Position on Z-axis'),
+                initChart('zv', [0, 127, 127], 'Velocity on Z-axis'),
+                initChart('za', [0, 0, 255], 'Acceleration on Z-axis')
+            ]
+        };
+
+        function log(text) {
+            var messages = document.getElementsByClassName('log')[0],
+                message = document.createElement('li'),
+                content = document.createTextNode(text);
+            message.appendChild(content);
+            messages.appendChild(message);
+        }
+
+        function updateChart(chart, time, val, err) {
+            chart.data.datasets[0].data.push({ x: time, y: val });
+            chart.data.datasets[1].data.push({ x: time, y: val - err });
+            chart.data.datasets[2].data.push({ x: time, y: val + err });
+            if (chart.data.datasets[0].data.length > 200) {
+                chart.data.datasets[0].data.shift();
+                chart.data.datasets[1].data.shift();
+                chart.data.datasets[2].data.shift();
+            }
+            chart.update();
+        }
+
+        function addRecord(data) {
+            var records = { X: [], Y: [], Z: [] };
+            for (var i = 0; i < data.length; i++) {
+                var record = data[i].split(',');
+                if (record[0] in records && record.length == 8) {
+                    records[record.shift()] = record;
+                }
+            }
+            console.log(records);
+
+            if (records.X.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.X[i], Number(records.X[0]), Number(records.X[i + 1]), Math.sqrt(records.X[i + 4]));
+                }
+            }
+            if (records.Y.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.Y[i], Number(records.Y[0]), Number(records.Y[i + 1]), Math.sqrt(records.Y[i + 4]));
+                }
+            }
+            if (records.Z.length > 0) {
+                for (var i = 0; i < 3; i++) {
+                    updateChart(charts.Z[i], Number(records.Z[0]), Number(records.Z[i + 1]), Math.sqrt(records.Z[i + 4]));
+                }
+            }
+
+        }
+
+        function initChart(id, c, t) {
+            return new Chart(document.getElementById('cv-' + id).getContext('2d'), {
+                type: 'line',
+                data: {
+                    datasets: [
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 1.0)', data: [], fill: false },
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 0.1)', data: [], fill: 0 },
+                        { borderColor: 'rgb(' + c[0] + ', ' + c[1] + ', ' + c[2] + ', 0.1)', data: [], fill: 0 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    title: { display: true, text: t },
+                    legend: { display: false },
+                    elements: { point: { radius: 0 } },
+                    animation: { duration: 0 },
+                    scales: {
+                        yAxes: [{ type: 'linear', stepSize: 0.1 }],
+                        xAxes: [{ type: 'linear' }]
+                    }
+                }
+            });
+        }
+
+        const socket = new WebSocket("ws://localhost:5678");
+        socket.onopen = function (e) {
+            socket.send("connect");
+            log(`[open] Connection established`);
+        };
+        socket.onmessage = function (e) {
+            var lines = event.data.split('\n');
+            if (lines[0] == 'record' && lines.length > 1) {
+                lines.shift()
+                addRecord(lines);
+            }
+            log(`[message] ${event.data}`);
+        };
+        socket.onclose = function (e) {
+            if (event.wasClean) {
+                log(`[close] Connection closed, code: ${e.code}, reason: ${e.reason}`);
+            }
+            else {
+                log(`[close] Connection died`);
+            }
+        };
+        socket.onerror = function (e) {
+            log(`[error] ${e.message}`);
+        };
+    </script>
+</body>

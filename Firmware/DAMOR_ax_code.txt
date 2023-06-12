@@ -1,0 +1,609 @@
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "string.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+#include "ax_hal.h"
+#define SET_IF_NOT_NULL(x, v) \
+    if (NULL != (x))          \
+        *(x) = (v);           \
+#define AX_SPI_CLK_FREQ 5 * 1000 * 1000
+#define AX_SPI_QUEUE_SIZE 2
+#define AX_SPI_HOST 1
+#define AX_SPI_PIN_MISO 12
+#define AX_SPI_PIN_MOSI 13
+#define AX_SPI_PIN_CLK 14
+#define AX_SPI_PIN_CS 15
+#define AX_PIN_INTR1 19
+#define AX_PIN_INTR2 18
+#define AX_PIN_DRDY 4
+#define AX_DEV_REGISTER_DEVID_AD 0x00
+#define AX_DEV_REGISTER_DEVID_MST 0x01
+#define AX_DEV_REGISTER_PARTID 0x02
+#define AX_DEV_REGISTER_REVID 0x03
+#define AX_DEV_REGISTER_STATUS 0x04
+#define AX_DEV_REGISTER_FIFO_ENTRIES 0x05
+#define AX_DEV_REGISTER_TEMP2 0x06
+#define AX_DEV_REGISTER_TEMP1 0x07
+#define AX_DEV_REGISTER_XDATA3 0x08
+#define AX_DEV_REGISTER_XDATA2 0x09
+#define AX_DEV_REGISTER_XDATA1 0x0A
+#define AX_DEV_REGISTER_YDATA3 0x0B
+#define AX_DEV_REGISTER_YDATA2 0x0C
+#define AX_DEV_REGISTER_YDATA1 0x0D
+#define AX_DEV_REGISTER_ZDATA3 0x0E
+#define AX_DEV_REGISTER_ZDATA2 0x0F
+#define AX_DEV_REGISTER_ZDATA1 0x10
+#define AX_DEV_REGISTER_FIFO_DATA 0x11
+#define AX_DEV_REGISTER_OFFSET_X2 0x1E
+#define AX_DEV_REGISTER_OFFSET_X1 0x1F
+#define AX_DEV_REGISTER_OFFSET_Y2 0x20
+#define AX_DEV_REGISTER_OFFSET_Y1 0x21
+#define AX_DEV_REGISTER_OFFSET_Z2 0x22
+#define AX_DEV_REGISTER_OFFSET_Z1 0x23
+#define AX_DEV_REGISTER_ACT_EN 0x24
+#define AX_DEV_REGISTER_ACT_THRESH2 0x25
+#define AX_DEV_REGISTER_ACT_THRESH1 0x26
+#define AX_DEV_REGISTER_ACT_COUNT 0x27
+#define AX_DEV_REGISTER_FILTER 0x28
+#define AX_DEV_REGISTER_FIFO_SAMPLES 0x29
+#define AX_DEV_REGISTER_INT_MAP 0x2A
+#define AX_DEV_REGISTER_SYNC 0x2B
+#define AX_DEV_REGISTER_RANGE 0x2C
+#define AX_DEV_REGISTER_POWER_CTL 0x2D
+#define AX_DEV_REGISTER_SELF_TEST 0x2E
+#define AX_DEV_REGISTER_RESET 0x2F
+static const char *AX_TAG = "ax-hal"
+typedef struct AxDriver
+    spi_host_device_t spiHost;
+    spi_device_handle_t spiDev;
+} dtAxDriver;
+static dtAxDriver *driver = NULL;
+static void ISR(void *arg)
+static inline int32_t sign_extend(uint32_t x, const int bits)
+    int32_t m = 1 << (bits - 1);
+    return (x ^ m) - m;
+static inline esp_err_t Transmit(uint8_t reg, uint8_t *pload, size_t plen, bool read)
+    if (NULL == driver)
+        return ESP_ERR_INVALID_STATE;
+    spi_transaction_t tr;
+    memset(&tr, 0, sizeof(spi_transaction_t));
+    tr.addr = reg << 1u | (read ? 1u : 0u);
+    tr.length = plen * 8;
+    tr.rxlength = (read ? plen * 8 : 0);
+    tr.rx_buffer = (read ? (void *)pload : NULL);
+    tr.tx_buffer = (read ? NULL : (void *)pload);
+    return spi_device_transmit(driver->spiDev, &tr);
+esp_err_t AxHalGetAnalogDevID(uint8_t *id)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_DEVID_AD, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get analog device id: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(id, buffer);
+    return err;
+esp_err_t AxHalGetAnalogDevMemsID(uint8_t *id)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_DEVID_MST, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get analog device mems id: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(id, buffer);
+    return err;
+esp_err_t AxHalGetDevID(uint8_t *id)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_PARTID, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get device id: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(id, buffer);
+    return err;
+esp_err_t AxHalGetRevID(uint8_t *id)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_REVID, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get revision: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(id, buffer);
+    return err;
+esp_err_t AxHalGetStatus(uint8_t *status)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_REVID, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get status: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(status, buffer);
+    return err;
+esp_err_t AxHalGetTemp(uint16_t *temp)
+    uint16_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_TEMP2, (uint8_t *)&buffer, 2u, true);
+    ESP_LOGD(AX_TAG, "get temperature: %04X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(temp, buffer);
+    return err;
+esp_err_t AxHalGetData(int32_t *x, int32_t *y, int32_t *z)
+    uint8_t buffer[9u] = {0u};
+    esp_err_t err = Transmit(AX_DEV_REGISTER_XDATA3, buffer, sizeof(buffer), true);
+    int32_t xv = sign_extend(((((((0u | buffer[0u]) << 8u) | buffer[1u]) << 8u) | buffer[2u]) >> 4u), 20u);
+    int32_t yv = sign_extend(((((((0u | buffer[3u]) << 8u) | buffer[4u]) << 8u) | buffer[5u]) >> 4u), 20u);
+    int32_t zv = sign_extend(((((((0u | buffer[6u]) << 8u) | buffer[7u]) << 8u) | buffer[8u]) >> 4u), 20u);
+    ESP_LOG_BUFFER_HEX_LEVEL(AX_TAG, buffer, sizeof(buffer), ESP_LOG_VERBOSE);
+    ESP_LOGD(AX_TAG, "get acceleration, x: %08X, y: %08X, z: %08X (%s)", xv, yv, zv, esp_err_to_name(err));
+    SET_IF_NOT_NULL(x, xv);
+    SET_IF_NOT_NULL(y, yv);
+    SET_IF_NOT_NULL(z, zv);
+    return err;
+esp_err_t AxHalGetFifoCount(uint8_t *count)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FIFO_ENTRIES, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get number of fifo entries: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(count, buffer);
+    return err;
+esp_err_t AxHalGetFifoEntry(uint32_t *entry)
+    uint32_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FIFO_DATA, (uint8_t *)&buffer, 3u, true)
+    ESP_LOGD(AX_TAG, "get fifo entry: %08X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(entry, buffer);
+    return err;
+esp_err_t AxHalGetOffset(int32_t *x, int32_t *y, int32_t *z)
+    uint8_t buffer[6u] = {0u};
+    esp_err_t err = Transmit(AX_DEV_REGISTER_OFFSET_X2, buffer, sizeof(buffer), true);
+    int32_t xv = sign_extend(((((0u | buffer[0u]) << 8u) | buffer[1u]) << 4u), 20u);
+    int32_t yv = sign_extend(((((0u | buffer[2u]) << 8u) | buffer[3u]) << 4u), 20u);
+    int32_t zv = sign_extend(((((0u | buffer[4u]) << 8u) | buffer[5u]) << 4u), 20u);
+    ESP_LOG_BUFFER_HEX_LEVEL(AX_TAG, buffer, sizeof(buffer), ESP_LOG_VERBOSE);
+    ESP_LOGD(AX_TAG, "get offset, x: %08X, y: %08X, z: %08X (%s)", xv, yv, zv, esp_err_to_name(err));
+    SET_IF_NOT_NULL(x, xv);
+    SET_IF_NOT_NULL(y, yv);
+    SET_IF_NOT_NULL(z, zv);
+    return err;
+esp_err_t AxHalSetOffset(int32_t x, int32_t y, int32_t z)
+    uint8_t buffer[6u] = {x >> 12u & 0xFFu, x >> 4u & 0xFFu, y >> 12u & 0xFFu, y >> 4u & 0xFFu, z >> 12u & 0xFFu, z >> 4u & 0xFFu};
+    esp_err_t err = Transmit(AX_DEV_REGISTER_OFFSET_X2, buffer, sizeof(buffer), false);
+    ESP_LOG_BUFFER_HEX_LEVEL(AX_TAG, buffer, sizeof(buffer), ESP_LOG_VERBOSE);
+    ESP_LOGD(AX_TAG, "set offset, x: %08X, y: %08X, z: %08X (%s)", x, y, z, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetActivity(uint8_t *axis, uint8_t *counter, uint32_t *threshold)
+    uint8_t buffer[4u] = {0u};
+    esp_err_t err = Transmit(AX_DEV_REGISTER_ACT_EN, buffer, sizeof(buffer), true);
+    uint8_t av = buffer[0u];
+    uint8_t cv = buffer[3u];
+    uint32_t tv = ((((0u | buffer[1u]) << 8u) | buffer[2u]) << 3u);
+    ESP_LOG_BUFFER_HEX_LEVEL(AX_TAG, buffer, sizeof(buffer), ESP_LOG_VERBOSE);
+    ESP_LOGD(AX_TAG, "get activity detection, axis: %02X, counter: %02X, threshold: %08X (%s)", av, cv, tv, esp_err_to_name(err));
+    SET_IF_NOT_NULL(axis, av);
+    SET_IF_NOT_NULL(counter, cv);
+    SET_IF_NOT_NULL(threshold, tv);
+    return err
+esp_err_t AxHalSetActivity(uint8_t axis, uint8_t counter, uint32_t threshold)
+    uint8_t buffer[4u] = {axis, threshold >> 11u & 0xFFu, threshold >> 3u & 0xFFu, counter};
+    esp_err_t err = Transmit(AX_DEV_REGISTER_ACT_EN, buffer, sizeof(buffer), false);
+    ESP_LOG_BUFFER_HEX_LEVEL(AX_TAG, buffer, sizeof(buffer), ESP_LOG_VERBOSE);
+    ESP_LOGD(AX_TAG, "set activity detection, axis: %02X, counter: %02X, threshold: %08X (%s)", axis, counter, threshold, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetFilter(uint8_t *filter)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FILTER, &buffer, 1u, true)
+    ESP_LOGD(AX_TAG, "get filter: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(filter, buffer);
+    return err;
+esp_err_t AxHalSetFilter(uint8_t filter)
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FILTER, &filter, 1u, false);
+    ESP_LOGD(AX_TAG, "set filter: %02X (%s)", filter, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetFifoLimit(uint8_t *limit)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FIFO_SAMPLES, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "set fifo limit: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(limit, buffer);
+    return err;
+esp_err_t AxHalSetFifoLimit(uint8_t limit)
+    esp_err_t err = Transmit(AX_DEV_REGISTER_FIFO_SAMPLES, &limit, 1u, false)
+    ESP_LOGD(AX_TAG, "set fifo limit: %02X (%s)", limit, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetInterrupt(uint8_t *intr)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_INT_MAP, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "get interrupt map: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(intr, buffer);
+    return err;
+esp_err_t AxHalSetInterrupt(uint8_t intr)
+    esp_err_t err = Transmit(AX_DEV_REGISTER_INT_MAP, &intr, 1u, false);
+    ESP_LOGD(AX_TAG, "set interrupt map: %02X (%s)", intr, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetRange(uint8_t *range)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_RANGE, &buffer, 1u, true);
+    ESP_LOGD(AX_TAG, "set range: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(range, buffer);
+    return err;
+esp_err_t AxHalSetRange(uint8_t range)
+    esp_err_t err = Transmit(AX_DEV_REGISTER_RANGE, &range, 1u, false);
+    ESP_LOGD(AX_TAG, "set range: %02X (%s)", range, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalGetControl(uint8_t *control)
+    uint8_t buffer = 0u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_POWER_CTL, &buffer, 1u, true)
+    ESP_LOGD(AX_TAG, "get control: %02X (%s)", buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(control, buffer);
+    return err;
+esp_err_t AxHalSetControl(uint8_t control)
+    esp_err_t err = Transmit(AX_DEV_REGISTER_POWER_CTL, &control, 1u, false);
+    ESP_LOGD(AX_TAG, "set control: %02X (%s)", control, esp_err_to_name(err));
+    return err;
+esp_err_t AxHalReset()
+    uint8_t buffer = 0x52u;
+    esp_err_t err = Transmit(AX_DEV_REGISTER_RESET, &buffer, 1u, false);
+    ESP_LOGD(AX_TAG, "reset (%s)", esp_err_to_name(err));
+    return err;
+esp_err_t AxHalInit()
+    esp_err_t err = ESP_OK;
+    if (NULL != driver)
+        ESP_LOGW(AX_TAG, "driver already initialized");
+        err = ESP_ERR_INVALID_STATE;
+    else
+        driver = (dtAxDriver *)calloc(1u, sizeof(dtAxDriver));
+        if (NULL == driver)
+            ESP_LOGE(AX_TAG, "driver init not enough memory");
+            err = ESP_ERR_NO_MEM;
+        else
+            driver->spiHost = AX_SPI_HOST;
+            spi_bus_config_t buscfg = {
+                .miso_io_num = AX_SPI_PIN_MISO,
+                .mosi_io_num = AX_SPI_PIN_MOSI,
+                .sclk_io_num = AX_SPI_PIN_CLK,
+                .quadwp_io_num = -1,
+                .quadhd_io_num = -1,
+                .max_transfer_sz = 0,
+                .flags = SPICOMMON_BUSFLAG_MASTER,
+            spi_device_interface_config_t devcfg = {
+                .command_bits = 0,
+                .address_bits = 8,
+                .dummy_bits = 0,
+                .clock_speed_hz = AX_SPI_CLK_FREQ,
+                .mode = 0,
+                .spics_io_num = AX_SPI_PIN_CS,
+                .queue_size = AX_SPI_QUEUE_SIZE,
+            err = spi_bus_initialize(driver->spiHost, &buscfg, 0);
+            if (ESP_OK == err)
+                err = spi_bus_add_device(driver->spiHost, &devcfg, &driver->spiDev);
+            if (ESP_OK != err)
+                ESP_LOGE(AX_TAG, "driver init spi fail");
+                spi_bus_free(driver->spiHost);
+                free(driver);
+                driver = NULL;
+                err = ESP_FAIL;
+            else
+                gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_EDGE);
+                gpio_reset_pin(AX_PIN_INTR1);
+                gpio_set_direction(AX_PIN_INTR1, GPIO_MODE_INPUT);
+                gpio_set_pull_mode(AX_PIN_INTR1, GPIO_PULLUP_ONLY);
+                gpio_set_intr_type(AX_PIN_INTR1, GPIO_INTR_NEGEDGE);
+                gpio_isr_handler_add(AX_PIN_INTR1, ISR, (void *)1u);
+                gpio_intr_enable(AX_PIN_INTR1);
+                gpio_reset_pin(AX_PIN_INTR2);
+                gpio_set_direction(AX_PIN_INTR2, GPIO_MODE_INPUT);
+                gpio_set_pull_mode(AX_PIN_INTR2, GPIO_PULLUP_ONLY);
+                gpio_set_intr_type(AX_PIN_INTR2, GPIO_INTR_NEGEDGE);
+                gpio_isr_handler_add(AX_PIN_INTR2, ISR, (void *)2u);
+                gpio_intr_enable(AX_PIN_INTR2);
+                gpio_reset_pin(AX_PIN_DRDY);
+                gpio_set_direction(AX_PIN_DRDY, GPIO_MODE_INPUT);
+                gpio_set_pull_mode(AX_PIN_DRDY, GPIO_PULLDOWN_ONLY);
+                gpio_set_intr_type(AX_PIN_DRDY, GPIO_INTR_POSEDGE);
+                gpio_isr_handler_add(AX_PIN_DRDY, ISR, (void *)3u);
+                gpio_intr_enable(AX_PIN_DRDY);
+                ESP_LOGI(AX_TAG, "driver init ok");
+    return err;
+
+RF Hal code:
+#define LOG_LOCAL_LEVEL ESP_LOG_INFO
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "string.h"
+#include "driver/uart.h"
+#include "rf_hal.h"
+#define SET_IF_NOT_NULL(x, v) \
+    if (NULL != (x))          \
+        *(x) = (v);           \
+#define RF_UART_PIN_TX (uint32_t)17u
+#define RF_UART_PIN_RX (uint32_t)16u
+#define RF_DEV_REGISTER_STATUS (uint16_t)0x0000u
+#define RF_DEV_REGISTER_BATTERY (uint16_t)0x0006u
+#define RF_DEV_REGISTER_HW_VER (uint16_t)0x000Au
+#define RF_DEV_REGISTER_SW_VER (uint16_t)0x000Cu
+#define RF_DEV_REGISTER_SERIAL (uint16_t)0x000Eu
+#define RF_DEV_REGISTER_ADDRESS (uint16_t)0x0010u
+#define RF_DEV_REGISTER_OFFSET (uint16_t)0x0012u
+#define RF_DEV_REGISTER_MEASURE (uint16_t)0x0020u
+#define RF_DEV_REGISTER_RESULT (uint16_t)0x0022u
+#define RF_DEV_REGISTER_LASER (uint16_t)0x01BEu
+#define RF_FRAME_HEADER_AA (uint8_t)0xAAu
+#define RF_FRAME_HEADER_EE (uint8_t)0xEEu
+#define RF_FRAME_AUTOBAUD (uint8_t)0x55u
+#define RF_FRAME_TERMINATE (uint8_t)0x58u
+#define RF_BUFFER_MAX_SIZE (size_t)16u
+static const char *RF_TAG = "rf-hal"
+typedef struct RfTransaction
+    uint8_t tx[RF_BUFFER_MAX_SIZE];
+    size_t txl;
+    int64_t txts;
+    uint8_t rx[RF_BUFFER_MAX_SIZE];
+    size_t rxl;
+    int64_t rxts;
+} dtRfTransaction
+typedef struct RfDriver
+    uart_port_t uartPort;
+    uint8_t continous;
+} dtRfDriver;
+static dtRfDriver *driver = NULL;
+static inline uint8_t Checksum(uint8_t *bytes, size_t size)
+    uint8_t checksum = 0u;
+    for (int i = 0u; i < size; i++)
+        checksum += bytes[i];
+    return checksum;
+static inline void ClearUartRX()
+    size_t blen = 0u;
+    uart_get_buffered_data_len(driver->uartPort, &blen);
+    if (0u < blen)
+        uart_flush_input(driver->uartPort);
+static esp_err_t Transmit(dtRfTransaction *tr, uint32_t timeout)
+    if (NULL == driver)
+        return ESP_ERR_INVALID_STATE;
+    esp_err_t err = ESP_OK;
+    int32_t sent = 0;
+    int32_t received = 0;
+    ClearUartRX();
+    if (0u < tr->txl)
+        tr->txts = 0u;
+        sent = uart_write_bytes(driver->uartPort, (void *)tr->tx, tr->txl);
+        err = (0 == sent ? ESP_ERR_TIMEOUT : ESP_FAIL);
+        if (tr->txl == (size_t)sent)
+            tr->txts = esp_timer_get_time();
+            err = ESP_OK;
+    if (0u < tr->rxl)
+        memset(tr->rx, 0, RF_BUFFER_MAX_SIZE);
+        tr->rxl = 0u;
+        tr->rxts = 0u;
+        received = uart_read_bytes(driver->uartPort, (void *)&tr->rx[0u], 1u, pdMS_TO_TICKS(timeout));
+        err = (0 == received ? ESP_ERR_TIMEOUT : ESP_FAIL);
+        if (0 < received)
+            received += uart_read_bytes(driver->uartPort, (void *)&tr->rx[1u], RF_BUFFER_MAX_SIZE - 1u, 0u);
+            if (0 < received)
+                tr->rxts = esp_timer_get_time();
+                tr->rxl = (size_t)received;
+                err = ESP_OK;
+    ESP_LOG_BUFFER_HEX_LEVEL(RF_TAG, tr->tx, RF_BUFFER_MAX_SIZE, ESP_LOG_VERBOSE);
+    ESP_LOG_BUFFER_HEX_LEVEL(RF_TAG, tr->rx, RF_BUFFER_MAX_SIZE, ESP_LOG_VERBOSE);
+    ESP_LOGV(RF_TAG, "transmit: TX %d/%d/%lld RX %d/%d/%lld (%s)", sent, RF_BUFFER_MAX_SIZE, tr->txts, received, RF_BUFFER_MAX_SIZE, tr->rxts, esp_err_to_name(err));
+    return err;
+static esp_err_t SetupFrame(dtRfTransaction *tr, uint8_t addr, uint16_t reg, uint16_t plen, uint16_t *pload)
+    esp_err_t err = ESP_OK;
+    memset(tr->tx, 0, sizeof(RF_BUFFER_MAX_SIZE));
+    tr->txl = (plen > 0u ? (7u + 2u * plen) : 5u);
+    if (RF_BUFFER_MAX_SIZE < tr->txl)
+        tr->txl = 0;
+        err = ESP_ERR_INVALID_SIZE;
+    else
+        tr->tx[0u] = RF_FRAME_HEADER_AA;
+        tr->tx[1u] = addr;
+        tr->tx[2u] = reg >> 8u & 0xFFu;
+        tr->tx[3u] = reg & 0xFFu;
+        if (0u < plen)
+            tr->tx[4u] = plen >> 8u & 0xFFu;
+            tr->tx[5u] = plen & 0xFFu;
+            for (uint32_t idx = 0u; idx < plen; idx++)
+                tr->tx[6u + 2u * idx] = pload[plen - idx - 1u] >> 8u & 0xFFu;
+                tr->tx[7u + 2u * idx] = pload[plen - idx - 1u] & 0xFFu;
+        tr->tx[tr->txl - 1u] = Checksum(&tr->tx[1u], tr->txl - 2u);
+    ESP_LOGV(RF_TAG, "setup frame %d (%s)", tr->txl, esp_err_to_name(err));
+    return err;
+static esp_err_t ParseFrame(dtRfTransaction *tr, uint8_t addr, uint16_t reg, uint16_t plen, uint16_t *pload)
+    esp_err_t err = ESP_OK;
+    if (tr->rxl != (plen > 0u ? (7u + 2u * plen) : 5u))
+        err = ESP_ERR_INVALID_SIZE;
+    else if ((tr->rx[0u] != RF_FRAME_HEADER_AA) && (tr->rx[0u] != RF_FRAME_HEADER_EE))
+        err = ESP_ERR_INVALID_VERSION;
+    else if (tr->rx[tr->rxl - 1u] != Checksum(&tr->rx[1u], tr->rxl - 2u))
+        err = ESP_ERR_INVALID_CRC;
+    else if ((tr->rx[1u] != addr) || (((uint16_t)tr->rx[2u] << 8u | tr->rx[3u]) != reg) || (((uint16_t)tr->rx[4u] << 8u | tr->rx[5u]) != plen))
+        err = ESP_ERR_INVALID_ARG;
+    else
+        for (uint32_t idx = 0u; idx < plen; idx++)
+            pload[plen - idx - 1u] = ((uint16_t)tr->rx[6u + 2u * idx] << 8u | tr->rx[7u + 2u * idx]);
+    ESP_LOGV(RF_TAG, "parse frame %d (%s)", tr->rxl, esp_err_to_name(err));
+    return err;
+esp_err_t RfHalGetStatus(uint8_t dev, uint16_t *status)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_STATUS, 0u, NULL);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_STATUS, 1u, &buffer);
+    ESP_LOGD(RF_TAG, "device %02X get status: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(status, buffer);
+    return err;
+esp_err_t RfHalGetVoltage(uint8_t dev, uint16_t *voltage)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_BATTERY, 0u, NULL);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_BATTERY, 1u, &buffer);
+    ESP_LOGD(RF_TAG, "device %02X get voltage: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(voltage, buffer);
+    return err;
+esp_err_t RfHalGetHWVersion(uint8_t dev, uint16_t *hw)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_HW_VER, 0u, NULL);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_HW_VER, 1u, &buffer);
+    ESP_LOGD(RF_TAG, "device %02X get hw version: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(hw, buffer);
+    return err;
+esp_err_t RfHalGetSWVersion(uint8_t dev, uint16_t *sw)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_SW_VER, 0u, NULL);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_SW_VER, 1u, &buffer)
+    ESP_LOGD(RF_TAG, "device %02X get sw version: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(sw, buffer);
+    return err;
+esp_err_t RfHalGetSerialNumber(uint8_t dev, uint32_t *serial)
+    uint32_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_SERIAL, 0u, NULL);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_SERIAL, 2u, (uint16_t *)&buffer);
+
+    ESP_LOGD(RF_TAG, "device %02X get serial number: %08X (%s)", dev, buffer, esp_err_to_name(err));
+    SET_IF_NOT_NULL(serial, buffer);
+    return err;
+esp_err_t RfHalGetMeasureResult(uint8_t dev, uint32_t *distance, uint16_t *quality, int64_t *timestamp)
+    uint16_t buffer[3u] = {0u};
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = ESP_OK;
+    if (0u == driver->continous)
+        err = SetupFrame(&transaction, (dev | 0x80u), RF_DEV_REGISTER_RESULT, 0u, NULL;
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 2000u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, dev, RF_DEV_REGISTER_RESULT, 3u, buffer);
+    ESP_LOGD(RF_TAG, "device %02X get measure result: %04X%04X %04X (%s)", dev, buffer[2], buffer[1], buffer[0], esp_err_to_name(err));
+    SET_IF_NOT_NULL(distance, (uint32_t)buffer[2] << 16u | buffer[1]);
+    SET_IF_NOT_NULL(quality, buffer[0]);
+    SET_IF_NOT_NULL(timestamp, transaction.rxts);
+    return err;
+esp_err_t RfHalSingleMeasure(uint8_t dev, uint16_t mode, uint32_t *distance, uint16_t *quality, int64_t *timestamp)
+    uint16_t buffer[3u] = {0u};
+    
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, dev, RF_DEV_REGISTER_MEASURE, 1u, &mode);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 2000u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, dev, RF_DEV_REGISTER_RESULT, 3u, buffer);
+    ESP_LOGD(RF_TAG, "device %02X single measure result: %04X%04X %04X (%s)", dev, buffer[2], buffer[1], buffer[0], esp_err_to_name(err));
+    SET_IF_NOT_NULL(distance, (uint32_t)buffer[2] << 16u | buffer[1]);
+    SET_IF_NOT_NULL(quality, buffer[0]);
+    SET_IF_NOT_NULL(timestamp, transaction.rxts);
+    return err;
+esp_err_t RfHalBroadcastMeasure(uint16_t mode)
+    dtRfTransaction transaction = {0u};
+    esp_err_t err = SetupFrame(&transaction, 0x7F, RF_DEV_REGISTER_MEASURE, 1u, &mode);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 0u);
+    ESP_LOGD(RF_TAG, "broadcast measure (%s)", esp_err_to_name(err));
+    return err;
+esp_err_t RfHalStartContinousMeasure(uint8_t dev, uint16_t mode)
+    dtRfTransaction transaction = {0u};
+    esp_err_t err = SetupFrame(&transaction, dev, RF_DEV_REGISTER_MEASURE, 1u, &mode);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 0u);
+        if (ESP_OK == err)
+            driver->continous = 1u;
+    ESP_LOGD(RF_TAG, "device %02X start continous measure (%s)", dev, esp_err_to_name(err));
+    return err;
+esp_err_t RfHalStopContinousMeasure()
+    esp_err_t err = ESP_FAIL;
+    if (1u == driver->continous)
+        dtRfTransaction transaction = {0u};
+        transaction.tx[0u] = RF_FRAME_TERMINATE;
+        transaction.txl = 1u;
+       transaction.rxl = 1u;
+        err = Transmit(&transaction, 1000u);
+        if ((ESP_OK == err) || (ESP_ERR_TIMEOUT == err))
+            driver->continous = 0u;
+            err = ESP_OK;
+    ESP_LOGD(RF_TAG, "stop continous measure (%s)", esp_err_to_name(err));
+    return err;
+esp_err_t RfHalSetDeviceAddress(uint8_t dev, uint16_t address)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, dev, RF_DEV_REGISTER_ADDRESS, 1u, &address);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, dev, RF_DEV_REGISTER_ADDRESS, 1u, &buffer);
+            if(ESP_OK == err && buffer != address)
+                err = ESP_ERR_INVALID_RESPONSE;
+    ESP_LOGD(RF_TAG, "device %02X set address: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    return err;
+esp_err_t RfHalSetMeasureOffset(uint8_t dev, int16_t offset)
+    uint16_t buffer = 0u
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, dev, RF_DEV_REGISTER_OFFSET, 1u, (uint16_t *)&offset);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, dev, RF_DEV_REGISTER_OFFSET, 1u, &buffer);
+            if(ESP_OK == err && buffer != (uint16_t) offset)
+                err = ESP_ERR_INVALID_RESPONSE;
+    ESP_LOGD(RF_TAG, "device %02X set offset: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    return err;
+esp_err_t RfHalSetLaser(uint8_t dev, uint16_t laser)
+    uint16_t buffer = 0u;
+    dtRfTransaction transaction = {0u};
+    transaction.rxl = 1u;
+    esp_err_t err = SetupFrame(&transaction, dev, RF_DEV_REGISTER_LASER, 1u, (uint16_t *)&laser);
+    if (ESP_OK == err)
+        err = Transmit(&transaction, 50u);
+        if (ESP_OK == err)
+            err = ParseFrame(&transaction, dev, RF_DEV_REGISTER_LASER, 1u, &buffer);
+            if(ESP_OK == err && buffer != (uint16_t) laser)
+                err = ESP_ERR_INVALID_RESPONSE;
+    ESP_LOGD(RF_TAG, "device %02X set laser: %04X (%s)", dev, buffer, esp_err_to_name(err));
+    return err;
+esp_err_t RfHalAutobaud()
+    dtRfTransaction transaction = {0u};
+    transaction.tx[0u] = RF_FRAME_AUTOBAUD;
+    transaction.txl = 1u;
+    transaction.rxl = 1u;
+    esp_err_t err = Transmit(&transaction, 1000u);
+    ESP_LOGD(RF_TAG, "autobaud (%s)", esp_err_to_name(err));
+    return err;
+esp_err_t RfHalInit()
+    esp_err_t err = ESP_OK;
+    if (NULL != driver)
+        ESP_LOGW(RF_TAG, "driver already initialized");
+        err = ESP_ERR_INVALID_STATE;
+    else
+        driver = (dtRfDriver *)calloc(1u, sizeof(dtRfDriver));
+        if (NULL == driver)
+            ESP_LOGE(RF_TAG, "driver init not enough memory");
+            err = ESP_ERR_NO_MEM;
+        else
+            driver->uartPort = UART_NUM_2;
+            driver->continous = 0u;
+            uart_config_t uart_config = {
+                .baud_rate = 115200,
+                .data_bits = UART_DATA_8_BITS,
+                .parity = UART_PARITY_DISABLE,
+                .stop_bits = UART_STOP_BITS_1,
+                .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+                .source_clk = UART_SCLK_APB,
+            err = uart_driver_install(driver->uartPort, 256u, 0u, 0u, NULL, 0);
+            if (ESP_OK == err)
+                err = uart_param_config(driver->uartPort, &uart_config);
+            if (ESP_OK == err)
+                err = uart_set_pin(driver->uartPort, RF_UART_PIN_TX, RF_UART_PIN_RX, -1, -1);
+            if (ESP_OK != err)
+                ESP_LOGE(RF_TAG, "driver init uart fail");
+                uart_driver_delete(driver->uartPort);
+                free(driver);
+                driver = NULL;
+                err = ESP_FAIL;
+            else
+                ESP_LOGI(RF_TAG, "driver init ok");
+    return err;
+
+

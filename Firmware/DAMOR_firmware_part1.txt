@@ -1,0 +1,19 @@
+#include "nvs_flash.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "wifi.h"
+#include "meas.h"
+#include "server.h"
+#define ABORT(e) if (ESP_OK != e) return
+void app_main(void)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ESP_ERROR_CHECK(nvs_flash_init());
+
+    ABORT(WifiInit(WIFI_INIT_MODE_STA));
+
+    FilterInit();
+    AxInit();
+    RfInit();
+    ServerStart();
